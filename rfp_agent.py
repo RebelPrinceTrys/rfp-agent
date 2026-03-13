@@ -1,5 +1,6 @@
 import anthropic
 import smtplib
+import time
 from email.mime.text import MIMEText
 import os
 from datetime import datetime
@@ -66,7 +67,13 @@ def triage_urls(verified_urls, today):
     if not verified_urls:
         return "No URLs were returned by the search engine."
 
-    url_list = "\n".join([f"- {u['title']}: {u['url']}" for u in verified_urls])
+    # Limit to 10 URLs to stay within rate limits
+    trimmed = verified_urls[:10]
+    url_list = "\n".join([f"- {u['title']}: {u['url']}" for u in trimmed])
+
+    # Wait 30 seconds before second API call to avoid rate limit
+    print("Pausing before triage step...")
+    time.sleep(30)
 
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
