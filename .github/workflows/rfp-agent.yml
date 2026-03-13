@@ -2,14 +2,14 @@ name: LGBTQ Health RFP Agent
 
 on:
   schedule:
-    - cron: '0 14 1 * *'  # Runs on the 1st of every month at 9am Eastern
-  workflow_dispatch:        # Also lets you run it manually anytime
+    - cron: '0 14 1 * *'
+  workflow_dispatch:
 
 jobs:
   search:
     runs-on: ubuntu-latest
     steps:
-     - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
