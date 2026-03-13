@@ -39,49 +39,49 @@ Then search broadly for:
 - Sexual gender minority health conference CFP
 - Reproductive medicine conference abstract submissions
 
-Format your response in two sections:
-
-SECTION 1 — OPEN NOW
-List only conferences with submission windows currently open or opening within 60 days.
-For each: conference name, organization, deadline, submission type, and URL.
-
-SECTION 2 — PRIORITY ORGANIZATIONS STATUS
-For each of the four priority organizations (GLMA, ASRM, WPATH, USPATH), confirm whether you found an open submission window or not. One line each."""
+For each result: conference name, organization, deadline, submission type, and URL.
+Only include submission windows currently open or opening within 60 days."""
         }]
     )
 
+    last_text = None
     verified_urls = []
-    summary = None
 
     for block in response.content:
         if block.type == "web_search_tool_result":
             for item in (block.content or []):
                 if hasattr(item, "url") and item.url:
                     title = getattr(item, "title", item.url)
-                    verified_urls.append({"title": title, "url": item.url})
+                    verified_urls.append(f"• {title}\n  {item.url}")
         if block.type == "text":
-            summary = block.text
+            last_text = block.text
 
-    return summary, verified_urls
+    return last_text, verified_urls
 
 def send_email(summary, verified_urls):
     today = datetime.now().strftime("%B %d, %Y")
-    url_list = "\n".join([f"• {u['title']}\n  {u['url']}" for u in verified_urls])
+    url_list = "\n".join(verified_urls) if verified_urls else "None returned."
 
     body = f"""Conference RFP Tracker — {today}
 
+PRIORITY ORGANIZATIONS CHECKED:
+- GLMA (glma.org)
+- ASRM (asrm.org)
+- WPATH (wpath.org)
+- USPATH (uspath.org)
+
 =============================================
-RESULTS
+AI SUMMARY
 =============================================
 {summary}
 
 =============================================
-ALL VERIFIED URLS (cross-check against summary)
+VERIFIED URLS (cross-check against summary)
 =============================================
 {url_list}
 
 ---
-Any URL in the summary not appearing in the verified list above should be treated as unconfirmed.
+Any URL in the summary not appearing in the verified list should be treated as unconfirmed.
 """
 
     msg = MIMEText(body)
@@ -92,7 +92,6 @@ Any URL in the summary not appearing in the verified list above should be treate
         server.login(os.environ["EMAIL_FROM"], os.environ["GMAIL_APP_PASSWORD"])
         server.send_message(msg)
 
-today = datetime.now().strftime("%B %d, %Y")
 summary, verified_urls = search_for_rfps()
 if summary:
     send_email(summary, verified_urls)
