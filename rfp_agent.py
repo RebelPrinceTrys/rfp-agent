@@ -8,17 +8,17 @@ from datetime import datetime
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 PRIORITY_ORGS = [
-    ("GLMA", "glma.org", "GLMA annual conference abstracts submissions proposals"),
-    ("ASRM", "asrm.org", "ASRM annual meeting abstract submissions oral poster"),
-    ("WPATH", "wpath.org", "WPATH symposium abstract submissions call for proposals"),
-    ("USPATH", "uspath.org", "USPATH conference abstract submissions call for proposals"),
+    ("GLMA", "glma.org", "GLMA conference abstracts submissions proposals"),
+    ("ASRM", "asrm.org", "ASRM annual meeting abstract submissions"),
+    ("WPATH", "wpath.org", "WPATH symposium abstract submissions proposals"),
+    ("USPATH", "uspath.org", "USPATH conference abstract submissions proposals"),
 ]
 
 def search_for_rfps():
     today = datetime.now().strftime("%B %d, %Y")
 
     priority_text = "\n".join([
-        f"- {name} ({site}): Search specifically for '{query}'"
+        f"- {name} ({site}): '{query}'"
         for name, site, query in PRIORITY_ORGS
     ])
 
@@ -26,26 +26,21 @@ def search_for_rfps():
         model="claude-sonnet-4-20250514",
         max_tokens=1000,
         tools=[{"type": "web_search_20250305", "name": "web_search"}],
-        system="You are a research assistant finding health conferences with currently open calls for proposals, calls for abstracts, RFPs, oral and poster abstract submissions, or requests for abstracts. Only report conferences whose submission windows are currently open or opening within 60 days. For each result, only include URLs that were returned directly by your web search tool. Never construct, guess, or infer URLs.",
+        system="Find health conferences with open calls for proposals, abstracts, RFPs, or oral/poster submissions. Only report windows open now or within 60 days. Only use URLs returned by your search tool. Never guess or invent URLs.",
         messages=[{
             "role": "user",
             "content": f"""Today is {today}.
 
-PRIORITY ORGANIZATIONS — search each of these specifically every time, regardless of whether their submission window is currently open. If nothing is open, note that explicitly so I know you checked:
-
+Search these priority organizations first. Note explicitly if nothing is open:
 {priority_text}
 
-GENERAL SEARCH — also search broadly for:
-- LGBTQ health conferences with open RFPs or calls for proposals
-- Queer health symposiums accepting abstracts
-- Trans health conference calls for submissions
-- Sexual and gender minority health conference CFPs
-- LGBTQ health conference oral abstract submissions
-- LGBTQ health conference poster abstract submissions
-- Reproductive medicine conference request for abstracts
-- LGBTQ health conference symposium submissions open
+Then search broadly for:
+- LGBTQ health conferences open RFPs calls for abstracts
+- Queer trans health symposium submissions open
+- Sexual gender minority health conference CFP
+- Reproductive medicine conference abstract submissions
 
-For each result, list: conference name, hosting organization, deadline, and what they are looking for. Do not include any URLs in your summary — those will be listed separately."""
+For each result: conference name, organization, deadline, submission type. No URLs in summary."""
         }]
     )
 
@@ -67,30 +62,26 @@ def triage_urls(verified_urls, today):
     if not verified_urls:
         return "No URLs were returned by the search engine."
 
-    # Limit to 10 URLs to stay within rate limits
     trimmed = verified_urls[:10]
     url_list = "\n".join([f"- {u['title']}: {u['url']}" for u in trimmed])
 
-    # Wait 30 seconds before second API call to avoid rate limit
     print("Pausing before triage step...")
-    time.sleep(30)
+    time.sleep(60)
 
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=1000,
         tools=[{"type": "web_search_20250305", "name": "web_search"}],
-        system="You are a careful research assistant. Your job is to visit URLs and determine whether each one has an actively open call for proposals, call for abstracts, request for abstracts, oral or poster submission window, or RFP right now. Be conservative: only mark something as OPEN if you can clearly confirm the submission window is currently active.",
+        system="Visit each URL and check if it has an actively open submission window. Only mark OPEN if clearly confirmed.",
         messages=[{
             "role": "user",
-            "content": f"""Today is {today}. For each URL below, check whether there is a currently open submission window of any kind — including calls for proposals, calls for abstracts, requests for abstracts, oral submissions, or poster submissions. Sort them into two groups:
+            "content": f"""Today is {today}. Check each URL for open submission windows (proposals, abstracts, oral, poster). Sort into:
 
-OPEN NOW: submission window is currently active
-NOT OPEN: already closed, not yet announced, or unclear
+OPEN NOW: currently active (include deadline and submission type)
+NOT OPEN: closed, not yet announced, or unclear
 
-URLs to check:
-{url_list}
-
-For each OPEN NOW item, include the deadline and what type of submission is being accepted. Be brief and factual."""
+URLs:
+{url_list}"""
         }]
     )
 
@@ -103,12 +94,11 @@ For each OPEN NOW item, include the deadline and what type of submission is bein
 
 def send_email(triage_summary, verified_urls, summary):
     today = datetime.now().strftime("%B %d, %Y")
-
     url_list = "\n".join([f"• {u['title']}\n  {u['url']}" for u in verified_urls])
 
     body = f"""Conference RFP Tracker — {today}
 
-PRIORITY ORGANIZATIONS CHECKED THIS RUN:
+PRIORITY ORGANIZATIONS CHECKED:
 - GLMA (glma.org)
 - ASRM (asrm.org)
 - WPATH (wpath.org)
@@ -120,7 +110,7 @@ ACTION NEEDED — OPEN SUBMISSIONS
 {triage_summary}
 
 =============================================
-ALL VERIFIED URLS (for your reference)
+ALL VERIFIED URLS
 =============================================
 {url_list}
 
@@ -130,7 +120,7 @@ FULL AI SUMMARY
 {summary}
 
 ---
-Any URL in the summary that does not appear in the verified list should be treated as unconfirmed.
+Any URL in the summary not in the verified list should be treated as unconfirmed.
 """
 
     msg = MIMEText(body)
