@@ -18,10 +18,11 @@ def search_for_rfps():
             "content": f"Today is {today}. Search for: LGBTQ health conferences with open RFPs or calls for proposals, queer health symposiums accepting abstracts, trans health conference calls for submissions, sexual and gender minority health conference CFPs. For each, list: conference name, hosting organization, deadline, what they want, and the direct submission URL. Only include future deadlines."
         }]
     )
+    last_text = None
     for block in response.content:
         if block.type == "text":
-            return block.text
-    return None
+            last_text = block.text
+    return last_text
 
 def send_email(body):
     today = datetime.now().strftime("%B %d, %Y")
