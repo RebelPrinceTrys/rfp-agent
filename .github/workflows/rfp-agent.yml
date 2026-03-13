@@ -1,0 +1,22 @@
+name: LGBTQ Health RFP Agent
+
+on:
+  schedule:
+    - cron: '0 14 1 * *'  # Runs on the 1st of every month at 9am Eastern
+  workflow_dispatch:        # Also lets you run it manually anytime
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: pip install anthropic
+      - run: python rfp_agent.py
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
