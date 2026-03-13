@@ -1,6 +1,5 @@
 import anthropic
 import smtplib
-import time
 from email.mime.text import MIMEText
 import os
 from datetime import datetime
@@ -26,7 +25,7 @@ def search_for_rfps():
         model="claude-sonnet-4-20250514",
         max_tokens=1000,
         tools=[{"type": "web_search_20250305", "name": "web_search"}],
-        system="Find health conferences with open calls for proposals, abstracts, RFPs, or oral/poster submissions. Only report windows open now or within 60 days. Only use URLs returned by your search tool. Never guess or invent URLs.",
+        system="Find health conferences with open calls for proposals, abstracts, RFPs, or oral/poster submissions. Only use URLs returned by your search tool. Never guess or invent URLs.",
         messages=[{
             "role": "user",
             "content": f"""Today is {today}.
@@ -40,7 +39,14 @@ Then search broadly for:
 - Sexual gender minority health conference CFP
 - Reproductive medicine conference abstract submissions
 
-For each result: conference name, organization, deadline, submission type. No URLs in summary."""
+Format your response in two sections:
+
+SECTION 1 — OPEN NOW
+List only conferences with submission windows currently open or opening within 60 days.
+For each: conference name, organization, deadline, submission type, and URL.
+
+SECTION 2 — PRIORITY ORGANIZATIONS STATUS
+For each of the four priority organizations (GLMA, ASRM, WPATH, USPATH), confirm whether you found an open submission window or not. One line each."""
         }]
     )
 
@@ -58,69 +64,24 @@ For each result: conference name, organization, deadline, submission type. No UR
 
     return summary, verified_urls
 
-def triage_urls(verified_urls, today):
-    if not verified_urls:
-        return "No URLs were returned by the search engine."
-
-    trimmed = verified_urls[:10]
-    url_list = "\n".join([f"- {u['title']}: {u['url']}" for u in trimmed])
-
-    print("Pausing before triage step...")
-    time.sleep(60)
-
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1000,
-        tools=[{"type": "web_search_20250305", "name": "web_search"}],
-        system="Visit each URL and check if it has an actively open submission window. Only mark OPEN if clearly confirmed.",
-        messages=[{
-            "role": "user",
-            "content": f"""Today is {today}. Check each URL for open submission windows (proposals, abstracts, oral, poster). Sort into:
-
-OPEN NOW: currently active (include deadline and submission type)
-NOT OPEN: closed, not yet announced, or unclear
-
-URLs:
-{url_list}"""
-        }]
-    )
-
-    triage_text = ""
-    for block in response.content:
-        if block.type == "text":
-            triage_text = block.text
-
-    return triage_text
-
-def send_email(triage_summary, verified_urls, summary):
+def send_email(summary, verified_urls):
     today = datetime.now().strftime("%B %d, %Y")
     url_list = "\n".join([f"• {u['title']}\n  {u['url']}" for u in verified_urls])
 
     body = f"""Conference RFP Tracker — {today}
 
-PRIORITY ORGANIZATIONS CHECKED:
-- GLMA (glma.org)
-- ASRM (asrm.org)
-- WPATH (wpath.org)
-- USPATH (uspath.org)
-
 =============================================
-ACTION NEEDED — OPEN SUBMISSIONS
-=============================================
-{triage_summary}
-
-=============================================
-ALL VERIFIED URLS
-=============================================
-{url_list}
-
-=============================================
-FULL AI SUMMARY
+RESULTS
 =============================================
 {summary}
 
+=============================================
+ALL VERIFIED URLS (cross-check against summary)
+=============================================
+{url_list}
+
 ---
-Any URL in the summary not in the verified list should be treated as unconfirmed.
+Any URL in the summary not appearing in the verified list above should be treated as unconfirmed.
 """
 
     msg = MIMEText(body)
@@ -134,8 +95,7 @@ Any URL in the summary not in the verified list should be treated as unconfirmed
 today = datetime.now().strftime("%B %d, %Y")
 summary, verified_urls = search_for_rfps()
 if summary:
-    triage_summary = triage_urls(verified_urls, today)
-    send_email(triage_summary, verified_urls, summary)
+    send_email(summary, verified_urls)
     print("Email sent successfully.")
 else:
     print("No results found.")
