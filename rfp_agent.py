@@ -1,13 +1,13 @@
 import anthropic
 import smtplib
 import urllib.request
+import time
 from email.mime.text import MIMEText
 import os
 from datetime import datetime
 
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-# These pages are fetched directly every run, no search engine involved
 PRIORITY_PAGES = [
     ("GLMA", "https://glma.org/guidelines_for_submitting_abst.php"),
     ("ASRM", "https://www.asrm.org/education/meetings-and-events/annual-meeting/call-for-abstracts/"),
@@ -19,60 +19,40 @@ def fetch_page(url):
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as response:
-            return response.read().decode("utf-8", errors="ignore")[:8000]
+            return response.read().decode("utf-8", errors="ignore")[:3000]
     except Exception as e:
         return f"Could not fetch page: {e}"
 
-def check_priority_orgs():
+def run_agent():
     today = datetime.now().strftime("%B %d, %Y")
-    results = []
 
+    # Fetch all priority pages with plain Python — zero API calls
+    print("Fetching priority org pages directly...")
+    priority_content = ""
     for name, url in PRIORITY_PAGES:
-        print(f"Checking {name} directly...")
+        print(f"  Fetching {name}...")
         content = fetch_page(url)
+        time.sleep(2)  # polite pause between page fetches
+        priority_content += f"\n\n--- {name} ({url}) ---\n{content}"
 
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=300,
-            messages=[{
-                "role": "user",
-                "content": f"""Today is {today}. Here is the raw content of the {name} website page at {url}:
-
-{content}
-
-Based only on this page content, answer in 2-3 sentences:
-1. Is there a currently open call for proposals, abstracts, or submissions? (Yes/No)
-2. If yes: what is the deadline and what type of submission is being accepted?
-3. If no: what is the current status (e.g. closed, not yet announced, past conference)?
-
-Be factual and brief. Do not guess."""
-            }]
-        )
-
-        summary = response.content[-1].text
-        results.append(f"{name} ({url})\n{summary}")
-
-    return "\n\n".join(results)
-
-def search_broadly():
-    today = datetime.now().strftime("%B %d, %Y")
-
+    # Now make exactly ONE API call that does everything
+    print("Running single Claude analysis...")
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=800,
+        max_tokens=1000,
         tools=[{"type": "web_search_20250305", "name": "web_search"}],
-        system="Find health conferences with open calls for proposals, abstracts, RFPs, or oral/poster submissions. Today's date is important: only include opportunities with deadlines in the future. Never include expired deadlines. Only use URLs returned by your search tool.",
+        system=f"Today is {today}. You help track conference submission deadlines. Only report opportunities with deadlines strictly after {today}. Never report expired deadlines. For priority organizations, base your answer only on the page content provided. For other conferences, use web search.",
         messages=[{
             "role": "user",
-            "content": f"""Today is {today}. Search for conferences beyond GLMA, ASRM, WPATH, and USPATH (those are already checked separately).
+            "content": f"""Today is {today}.
 
-Search for:
-- LGBTQ health conferences open calls for abstracts {today[:4]}
-- Queer trans health symposium submissions open {today[:4]}
-- Sexual gender minority health conference CFP {today[:4]}
-- Reproductive medicine conference abstract submissions {today[:4]}
+PART 1 — PRIORITY ORGANIZATIONS (read the page content below, do not search for these):
+For each organization, state in 1-2 sentences: is there a currently open submission window? If yes, what is the deadline and submission type? If no, what is the current status?
 
-Only include opportunities where the deadline is after {today}. For each, list: conference name, organization, deadline, submission type, and URL. If you cannot confirm the deadline is in the future, do not include it."""
+{priority_content}
+
+PART 2 — BROADER SEARCH:
+Now search the web for other LGBTQ health, trans health, and reproductive medicine conferences with submission windows currently open or opening within 60 days. Exclude GLMA, ASRM, WPATH, and USPATH. Only include deadlines after {today}. List conference name, deadline, submission type, and URL."""
         }]
     )
 
@@ -90,32 +70,28 @@ Only include opportunities where the deadline is after {today}. For each, list: 
 
     return summary, verified_urls
 
-def send_email(priority_results, broad_summary, verified_urls):
+def send_email(summary, verified_urls):
     today = datetime.now().strftime("%B %d, %Y")
     url_list = "\n".join(verified_urls) if verified_urls else "None returned."
 
     body = f"""Conference RFP Tracker — {today}
 
-=============================================
-PRIORITY ORGANIZATIONS (checked directly)
-=============================================
-These four organizations were checked by visiting their websites directly today.
-
-{priority_results}
+Priority organizations checked by direct page visit (GLMA, ASRM, WPATH, USPATH).
+Broader results found via web search.
 
 =============================================
-OTHER CONFERENCES (web search)
+FULL RESULTS
 =============================================
-{broad_summary}
+{summary}
 
 =============================================
-VERIFIED URLS FROM BROAD SEARCH
+VERIFIED URLs FROM WEB SEARCH
 =============================================
 {url_list}
 
 ---
-Priority org results come from direct page fetches and are more reliable.
-Broad search results should be cross-checked against the URLs listed above.
+Priority org results are based on live page content fetched today.
+Web search results should be cross-checked against the URLs above.
 """
 
     msg = MIMEText(body)
@@ -126,10 +102,9 @@ Broad search results should be cross-checked against the URLs listed above.
         server.login(os.environ["EMAIL_FROM"], os.environ["GMAIL_APP_PASSWORD"])
         server.send_message(msg)
 
-today = datetime.now().strftime("%B %d, %Y")
-print("Checking priority organizations directly...")
-priority_results = check_priority_orgs()
-print("Running broad search...")
-broad_summary, verified_urls = search_broadly()
-send_email(priority_results, broad_summary, verified_urls)
-print("Email sent successfully.")
+summary, verified_urls = run_agent()
+if summary:
+    send_email(summary, verified_urls)
+    print("Email sent successfully.")
+else:
+    print("No results found.")
